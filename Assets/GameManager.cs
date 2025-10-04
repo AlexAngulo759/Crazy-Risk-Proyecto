@@ -1,9 +1,54 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class GameManager : MonoBehaviour
 {
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            transform.SetParent(null);
+            DontDestroyOnLoad(gameObject);
+
+            // Registrar callback para cuando se cargue una escena
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    // Este método se llama automáticamente cuando una escena termina de cargar
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (scene.name == "GameScene")
+        {
+            if (esServidor)
+            {
+                // Solo el servidor reparte
+                DistribuirTerritorios();
+
+                // Una vez terminado, enviar todos los países al cliente
+                EnviarEstadoInicial();
+            }
+        }
+    }
+    public void EnviarEstadoInicial()
+    {
+        BotonHandler[] paises = FindObjectsOfType<BotonHandler>();
+        foreach (var pais in paises)
+        {
+            MyNetworkManager.Instance.EnviarEstadoPais(pais);
+        }
+
+        Debug.Log("📤 Estado inicial de todos los países enviado al cliente.");
+    }
     public static GameManager Instance;
 
     [Header("Alias y colores (menú)")]
@@ -44,18 +89,8 @@ public class GameManager : MonoBehaviour
     // Control para refuerzos iniciales
     private bool primerCambioListo = false;
 
-    void Awake()
-    {
-        if (Instance == null)
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
-    }
+
+   
 
     // ================= ATAQUE =================
     public void SeleccionarPais(BotonHandler pais)
@@ -160,6 +195,7 @@ public class GameManager : MonoBehaviour
     }
     private void CheckVictoriaMundial(int atacanteId)
     {
+    
         BotonHandler[] todosPaises = FindObjectsOfType<BotonHandler>();
         foreach (var pais in todosPaises)
         {
@@ -219,7 +255,7 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        MyNetworkManager.Instance.EnviarMensaje("TURN" + turno);
+        MyNetworkManager.Instance.EnviarMensaje("TURN:" + turno);
 
         // Reiniciar fase
         fase = 1;
@@ -299,12 +335,52 @@ public class GameManager : MonoBehaviour
 
     private int BonificacionContinentes(int jugador)
     {
-        int bonus = 0;
-        // Aquí defines las listas de territorios de cada continente y verificas si son todos del jugador
-        return bonus;
+        // Definir bonificación de cada continente
+        Dictionary<string, int> bonusPorContinente = new Dictionary<string, int>
+    {
+        { "Asia", 7 },
+        { "America del norte", 3 },
+        { "Europa", 5 },
+        { "Africa", 3 },
+        { "America del sur", 2 },
+        { "Oceania", 2 }
+    };
+
+        int bonusTotal = 0;
+
+        // Revisar cada continente
+        foreach (var kvp in bonusPorContinente)
+        {
+            string continente = kvp.Key;
+            int bonus = kvp.Value;
+
+            if (ControlaContinente(jugador, continente))
+            {
+                bonusTotal += bonus;
+                Debug.Log($"Jugador {jugador} controla {continente} (+{bonus} tropas)");
+            }
+        }
+
+        return bonusTotal;
     }
 
-    // ================= REGISTRO/DISTRIBUCIÓN =================
+    private bool ControlaContinente(int jugador, string continente)
+    {
+        BotonHandler[] paises = FindObjectsOfType<BotonHandler>();
+
+        foreach (var pais in paises)
+        {
+            if (pais.continente == continente && pais.dueño != jugador)
+            {
+                // Si hay un país en ese continente que no es del jugador, no lo controla
+                return false;
+            }
+        }
+
+        return true; // todos los países de ese continente son del jugador
+    }
+
+
     public void ActualizarDatosRegistro()
     {
         string datos = $"INFO:{jugador1},{color1},{jugador2},{color2}";
@@ -317,8 +393,9 @@ public class GameManager : MonoBehaviour
         List<int> ids = Enumerable.Range(1, 42).ToList();
         System.Random rng = new System.Random();
         ids = ids.OrderBy(x => rng.Next()).ToList();
-
+       
         BotonHandler[] paises = FindObjectsOfType<BotonHandler>();
+ 
 
         for (int i = 0; i < 14; i++)
         {
@@ -328,6 +405,7 @@ public class GameManager : MonoBehaviour
 
         for (int i = 14; i < 28; i++)
         {
+            Debug.Log(i);
             var pais = paises.FirstOrDefault(p => p.ID == ids[i]);
             if (pais != null) { pais.dueño = 2; pais.tropas = 1; }
         }
@@ -342,6 +420,7 @@ public class GameManager : MonoBehaviour
         int tropasRestantes = 40 - neutros.Count;
         while (tropasRestantes > 0)
         {
+            
             var paisAleatorio = neutros[rng.Next(neutros.Count)];
             paisAleatorio.tropas++;
             tropasRestantes--;

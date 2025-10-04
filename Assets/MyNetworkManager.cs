@@ -1,11 +1,15 @@
-﻿using UnityEngine;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
-using System.IO;
 using System.Threading;
+using UnityEngine;
 
 public class MyNetworkManager : MonoBehaviour
 {
+    private Queue<System.Action> accionesEnHiloPrincipal = new Queue<System.Action>();
     public static MyNetworkManager Instance;
 
     private TcpListener server;
@@ -22,11 +26,22 @@ public class MyNetworkManager : MonoBehaviour
     // IP del servidor (para clientes)
     public string serverIP = "172.20.10.14"; // 🚀 Tu IP local fija
 
+    void Update()
+    {
+        lock (accionesEnHiloPrincipal)
+        {
+            while (accionesEnHiloPrincipal.Count > 0)
+            {
+                accionesEnHiloPrincipal.Dequeue().Invoke();
+            }
+        }
+    }
     void Awake()
     {
         if (Instance == null)
         {
             Instance = this;
+            transform.SetParent(null);
             DontDestroyOnLoad(gameObject); // Persistir entre escenas
         }
         else
@@ -100,10 +115,14 @@ public class MyNetworkManager : MonoBehaviour
         {
             while (true)
             {
-                try
-                {
+                
+                    
                     string mensaje = reader.ReadLine();
-                    if (mensaje == null) continue;
+                    Debug.Log("el mensaje recibido es: " + mensaje);
+                    if (mensaje == null) {
+                        Debug.Log("Este mensaje lanza un error");
+                        continue;
+                        }
 
                     if (mensaje.StartsWith("INFO"))
                     {
@@ -119,7 +138,20 @@ public class MyNetworkManager : MonoBehaviour
                         Debug.Log($"📩 Recibidos datos de registro → J1:{GameManager.Instance.jugador1} (Color {GameManager.Instance.color1}), " +
                                   $"J2:{GameManager.Instance.jugador2} (Color {GameManager.Instance.color2})");
                     }
-                    else if (mensaje.StartsWith("TURN"))
+                else if (mensaje == "CAMBIOESCENA")
+                {
+                    Debug.Log("📩 Recibido mensaje de cambio de escena");
+
+                    lock (accionesEnHiloPrincipal)
+                    {
+                        accionesEnHiloPrincipal.Enqueue(() =>
+                        {
+                            // Todo lo que toque Unity va aquí
+                            UnityEngine.SceneManagement.SceneManager.LoadScene("GameScene");
+                        });
+                    }
+                }
+                else if (mensaje.StartsWith("TURN"))
                     {
                         int nuevoTurno = int.Parse(mensaje.Split(':')[1]);
                         GameManager.Instance.turno = nuevoTurno;
@@ -132,8 +164,14 @@ public class MyNetworkManager : MonoBehaviour
                         if ((GameManager.Instance.esServidor && nuevoTurno == 1) ||
                             (!GameManager.Instance.esServidor && nuevoTurno == 2))
                         {
-                            GameManager.Instance.IniciarRefuerzos();
+                        lock (accionesEnHiloPrincipal)
+                        {
+                            accionesEnHiloPrincipal.Enqueue(() =>
+                            {
+                                GameManager.Instance.IniciarRefuerzos();
+                            });
                         }
+                    }
                     }
                     else if (mensaje.StartsWith("FASE"))
                     {
@@ -171,12 +209,8 @@ public class MyNetworkManager : MonoBehaviour
                             Debug.Log($"📩 País {id} actualizado → Dueño={nuevoDueño}, Tropas={nuevasTropas}, Continente={continente}, Fase={fase}");
                         }
                     }
-                }
-                catch
-                {
-                    Debug.Log("⚠️ Conexión cerrada.");
-                    break;
-                }
+               
+                
             }
         }).Start();
     }

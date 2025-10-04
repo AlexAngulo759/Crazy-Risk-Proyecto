@@ -50,8 +50,10 @@ public class BotonListo : MonoBehaviour
             GameManager.Instance.CambiarTurno();
             Debug.Log("Listo lado derecho: abriendo escena del juego");
 
+            MyNetworkManager.Instance.EnviarMensaje("CAMBIOESCENA");
+
             SceneManager.LoadScene("GameScene");
-            GameManager.Instance.DistribuirTerritorios();
+ 
         }
 
     }
